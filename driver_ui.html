@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Driver Mobile App - Logistics</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0; padding: 0;
+            background-color: #f1f5f9;
+            color: #0f172a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+        }
+        .header {
+            width: 100%;
+            background-color: #1e293b;
+            color: #f8fafc;
+            padding: 20px;
+            text-align: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .container {
+            width: 90%;
+            max-width: 400px;
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-top: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            text-align: center;
+        }
+        input {
+            width: calc(100% - 20px);
+            padding: 12px;
+            margin: 10px 0 20px 0;
+            border-radius: 6px;
+            border: 1px solid #cbd5e1;
+            font-size: 1rem;
+        }
+        button {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: white;
+            cursor: pointer;
+            transition: 0.2s;
+            margin-bottom: 10px;
+        }
+        .btn-start { background-color: #10b981; }
+        .btn-start:hover { background-color: #059669; }
+        .btn-delay { background-color: #f59e0b; }
+        .btn-delay:hover { background-color: #d97706; }
+        .btn-deliver { background-color: #3b82f6; }
+        .btn-deliver:hover { background-color: #2563eb; }
+        .btn-stop { background-color: #ef4444; display: none; }
+
+        .hidden { display: none; }
+        .log-box {
+            font-family: monospace;
+            font-size: 0.85rem;
+            background: #e2e8f0;
+            padding: 10px;
+            border-radius: 6px;
+            text-align: left;
+            margin-top: 20px;
+            height: 100px;
+            overflow-y: auto;
+        }
+        .alert-box {
+            background-color: #fee2e2;
+            border: 1px solid #ef4444;
+            color: #b91c1c;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: bold;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">🚚 Driver App</div>
+
+    <div class="container" id="login-section">
+        <h3>Login to begin shift</h3>
+        <input type="text" id="driver_id" placeholder="Enter Driver ID (e.g. D001)" />
+        <input type="text" id="truck_id" placeholder="Enter Truck ID (e.g. T001)" />
+        <button class="btn-deliver" onclick="login()">LOGIN</button>
+    </div>
+
+    <div class="container hidden" id="dashboard-section">
+        <h3 id="welcome-text"></h3>
+        
+        <div id="alert-banner" class="alert-box">
+            ⚠ Alert: Changing route due to traffic.
+        </div>
+
+        <button class="btn-start" id="btn-start" onclick="startTracking()">START DELIVERY</button>
+        <button class="btn-stop" id="btn-stop" onclick="stopTracking()">STOP DELIVERY</button>
+        <button class="btn-delay" onclick="reportDelay()">REPORT DELAY</button>
+        <button class="btn-deliver" onclick="markDelivered()">DELIVERED</button>
+
+        <div class="log-box" id="logs">
+            System ready...
+        </div>
+    </div>
+
+    <script>
+        let driverId = "";
+        let truckId = "";
+        let trackingInterval = null;
+
+        function logMsg(msg) {
+            const el = document.getElementById("logs");
+            el.innerHTML = `[${new Date().toLocaleTimeString()}] ${msg}<br/>` + el.innerHTML;
+        }
+
+        function login() {
+            driverId = document.getElementById("driver_id").value.trim();
+            truckId = document.getElementById("truck_id").value.trim();
+            if(!driverId || !truckId) {
+                alert("Please enter both Driver ID and Truck ID.");
+                return;
+            }
+            document.getElementById("login-section").classList.add("hidden");
+            document.getElementById("dashboard-section").classList.remove("hidden");
+            document.getElementById("welcome-text").innerText = `Assigned to: ${truckId}`;
+            logMsg(`Logged in as ${driverId}`);
+        }
+
+        function startTracking() {
+            if(!navigator.geolocation) {
+                logMsg("Error: Geolocation is not supported by your browser.");
+                return;
+            }
+            document.getElementById("btn-start").style.display = "none";
+            document.getElementById("btn-stop").style.display = "block";
+            logMsg("Started tracking. GPS active.");
+            
+            // Send first location immediately
+            sendLocation();
+
+            // Send location every 30 seconds
+            trackingInterval = setInterval(sendLocation, 30000);
+        }
+
+        function stopTracking() {
+            clearInterval(trackingInterval);
+            document.getElementById("btn-start").style.display = "block";
+            document.getElementById("btn-stop").style.display = "none";
+            logMsg("Tracking stopped.");
+        }
+
+        function sendLocation() {
+            navigator.geolocation.getCurrentPosition(pos => {
+                const lat = pos.coords.latitude;
+                const lon = pos.coords.longitude;
+                logMsg(`GPS acquired: ${lat.toFixed(4)}, ${lon.toFixed(4)}`);
+
+                fetch("/update_location", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({
+                        truck_id: truckId,
+                        latitude: lat,
+                        longitude: lon
+                    })
+                }).then(res => res.json()).then(data => {
+                    logMsg(`Sent to server: ${data.status}`);
+                }).catch(err => {
+                    logMsg(`Network error: ${err}`);
+                });
+
+            }, err => {
+                logMsg(`GPS Error: ${err.message}`);
+            });
+        }
+
+        function reportDelay() {
+            logMsg("Reported delay to dispatch.");
+            alert("Delay reported successfully.");
+        }
+
+        function markDelivered() {
+            stopTracking();
+            logMsg("Shipment marked as DELIVERED.");
+            alert("Great job! Shipment delivered.");
+        }
+
+        // Simulating receiving an alert via WebSocket or polling
+        setInterval(() => {
+            // Check for mock alerts randomly for demo purposes
+            // In reality, this could poll a /driver/alerts endpoint
+        }, 30000);
+    </script>
+</body>
+</html>
